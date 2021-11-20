@@ -72,3 +72,86 @@ if __name__ == '__main__':
 ```
 
 Возврат в синхронный код происходит благодаря использованию генератора `concurrent.futures.as_completed`, который возвращает результаты по мере готовности их в воркерах. Ручная синхронизация отсутствует, что очень удобно.
+
+Помните о том, что в CPython есть [GIL](https://docs.python.org/3/glossary.html#term-global-interpreter-lock), что не позволяет эффективно работать с потоками в CPU-bound задачах.
+
+### IO-bound. Проверяем ссылки на страницах Википедии
+
+Википедия &mdash; вторичный источник информации: высказывания в ней должны опираться на авторитетные источники в виде ссылок. Публикация оригинальных исследований запрещена. Со временем ссылки становятся нерабочими (сайт сделал редизайн, DNS больше не принадлежит владельцам, за хостинг не заплатили, сервис закрылся).
+
+Давайте попытаемся оценить количество неработающих ссылок. Возьмем 100 случайных страниц Википедии (пройдем по ссылке [Случайная страница](https://ru.wikipedia.org/wiki/%D0%A1%D0%BB%D1%83%D0%B6%D0%B5%D0%B1%D0%BD%D0%B0%D1%8F:%D0%A1%D0%BB%D1%83%D1%87%D0%B0%D0%B9%D0%BD%D0%B0%D1%8F_%D1%81%D1%82%D1%80%D0%B0%D0%BD%D0%B8%D1%86%D0%B0)). 
+
+```python
+from urllib.request import urlopen
+from urllib.parse import unquote
+from bs4 import BeautifulSoup
+
+url = 'https://ru.wikipedia.org/wiki/%D0%A1%D0%BB%D1%83%D0%B6%D0%B5%D0%B1%D0%BD%D0%B0%D1%8F:%D0%A1%D0%BB%D1%83%D1%87%D0%B0%D0%B9%D0%BD%D0%B0%D1%8F_%D1%81%D1%82%D1%80%D0%B0%D0%BD%D0%B8%D1%86%D0%B0'
+
+for i in range(100):
+    s = urlopen(url)
+    print(unquote(s.url))
+
+##https://ru.wikipedia.org/wiki/Бурасы
+##https://ru.wikipedia.org/wiki/Волшебный_куст
+##https://ru.wikipedia.org/wiki/Льюис,_Леннокс
+##https://ru.wikipedia.org/wiki/Ильинская_Поповка
+##https://ru.wikipedia.org/wiki/Стрельцов,_Василий_Витальевич
+##https://ru.wikipedia.org/wiki/Anasimyia
+##https://ru.wikipedia.org/wiki/Малая_Осница
+##https://ru.wikipedia.org/wiki/Владимиров,_Георгий_Петрович
+##https://ru.wikipedia.org/wiki/Bhutan_Today
+##https://ru.wikipedia.org/wiki/Польтроньери,_Альберто
+##https://ru.wikipedia.org/wiki/Радзивилл,_Мартин_Николай
+##https://ru.wikipedia.org/wiki/Эренрайк,_Олден
+```
+
+Из полученных страниц извлечем все ссылки и сохраним их в файл.
+
+```
+from urllib.request import urlopen
+from urllib.parse import unquote
+from bs4 import BeautifulSoup
+from tqdm import tqdm
+
+url = 'https://ru.wikipedia.org/wiki/%D0%A1%D0%BB%D1%83%D0%B6%D0%B5%D0%B1%D0%BD%D0%B0%D1%8F:%D0%A1%D0%BB%D1%83%D1%87%D0%B0%D0%B9%D0%BD%D0%B0%D1%8F_%D1%81%D1%82%D1%80%D0%B0%D0%BD%D0%B8%D1%86%D0%B0'
+
+res = open('res.txt', 'w', encoding='utf8')
+
+for i in tqdm(range(100)):
+    html = urlopen(url).read().decode('utf8')
+    soup = BeautifulSoup(html, 'html.parser')
+    links = soup.find_all('a')
+
+    for l in links:
+        href = l.get('href')
+        if href and href.startswith('http') and 'wiki' not in href:
+            print(href, file=res)
+```
+
+Попробуем теперь синхронно, в 1 поток спрашивать каждую ссылку. Возможно иногда будет 404, возможно будет ошибка соединения.
+
+```
+from urllib.request import Request, urlopen
+from urllib.parse import unquote
+
+links = open('res.txt', encoding='utf8').read().split('\n')
+
+for url in links:
+    try:
+        request = Request(
+            url,
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 9.0; Win65; x64; rv:97.0) Gecko/20105107 Firefox/92.0'},  
+        )
+        resp = urlopen(request, timeout=5)
+        code = resp.code
+        print(code)
+        resp.close()
+    except Exception as e:
+        print(url, e)
+```
+
+* Замерьте время синхронной проверки ссылок.
+* Перепишите код, используя `ThreadPoolExecutor`. 
+* Изменяйте количество воркеров: 5, 10, 100.
+* Во время работы посмотрите с использованием стандартных утилит вашей OC загрузку памяти, процессора, сети, время работы. Зависят ли они от количества воркеров и как?
