@@ -108,7 +108,7 @@ for i in range(100):
 
 Из полученных страниц извлечем все ссылки и сохраним их в файл.
 
-```
+```python
 from urllib.request import urlopen
 from urllib.parse import unquote
 from bs4 import BeautifulSoup
@@ -131,7 +131,7 @@ for i in tqdm(range(100)):
 
 Попробуем теперь синхронно, в 1 поток спрашивать каждую ссылку. Возможно иногда будет 404, возможно будет ошибка соединения.
 
-```
+```python
 from urllib.request import Request, urlopen
 from urllib.parse import unquote
 
